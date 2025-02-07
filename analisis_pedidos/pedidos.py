@@ -9,7 +9,7 @@ import shutil
 
 
 # URLs
-pedido_sel=100760
+pedido_sel=97912
 login_url = "https://tg.toscanagroup.com.co/index.php"
 protected_url = f"https://tg.toscanagroup.com.co/ver_cotizacion.php?id={pedido_sel}"
 
@@ -106,7 +106,7 @@ try:
         with pd.ExcelWriter(ruta_archivo, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
             df_final_pedido.to_excel(writer, sheet_name=hoja_objetivo, index=False)
 
-        print("Datos guardados exitosamente.")
+        print(f"Datos guardados exitosamente. pedido: {pedido_sel}")
     else:
         print("Login fallido.")
 except requests.exceptions.RequestException as e:
