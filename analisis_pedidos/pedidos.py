@@ -1,21 +1,17 @@
 import requests
 from bs4 import BeautifulSoup
 import re
-import openpyxl
-from openpyxl import load_workbook
 import pandas as pd
 import os
 import shutil
 
-
 # URLs
-pedido_sel=101739
 login_url = "https://tg.toscanagroup.com.co/index.php"
-protected_url = f"https://tg.toscanagroup.com.co/ver_cotizacion.php?id={pedido_sel}"
-
-
 ruta_archivo = r"C:/Users/JORGE CONTRERAS/OneDrive - 900208659-2 DAMIS SAS/Escritorio/PLANEACION/consumos/INDICADORES PLANEACION/analisis_pedidos.xlsx"
 hoja_objetivo = "Pedidos_clientes"
+
+# Lista de pedidos a consultar
+pedidos_list = [102630,102851,102924,101692,102816,100269,101736,100234,102489,101317,92389,102701,102497,100997,101262,102583,102028,101778,100961,102548,100371,101217,102606,53753,99930,100249,101198,99510,101043,101664,101897,101625,102231,101045,102122,100943,102922,101605,102873,102918,102893,101974,102390,101384,102328,102225,92975]
 
 # Crear copia de seguridad del archivo si existe
 if os.path.exists(ruta_archivo):
@@ -23,35 +19,55 @@ if os.path.exists(ruta_archivo):
     shutil.copy(ruta_archivo, ruta_backup)
 
 try:
-    # Crear una sesión
+    # Crear sesión persistente
     session = requests.Session()
 
     # Obtener la página de login
     login_page = session.get(login_url, timeout=10)
     login_page.raise_for_status()
-    soup = BeautifulSoup(login_page.text, 'html.parser')
 
-    # Datos de autenticación
+    # Autenticación
     payload = {
         'usuario': 'jorge.contreras',
-        'contrasena': 'EstebanGrey1704*',
-        'url': f'/ver_cotizacion.php?id={pedido_sel}'
+        'contrasena': 'EstebanGrey1704*'
     }
 
-    # Realizar el POST de autenticación
     login_response = session.post(login_url, data=payload, timeout=10)
     login_response.raise_for_status()
 
-    if "Ingresar" not in login_response.text:
-        print("Login exitoso!")
+    if "Ingresar" in login_response.text:
+        print("Login fallido.")
+        exit()
 
-        # Acceder a la URL protegida
+    print("Login exitoso!")
+
+    # Leer archivo Excel si existe
+    if os.path.exists(ruta_archivo):
+        df_pedidos_existente = pd.read_excel(ruta_archivo, sheet_name=hoja_objetivo, dtype={"Numero de Pedido": str})
+    else:
+        df_pedidos_existente = pd.DataFrame()
+
+    # Convertir la columna de pedidos en un set para búsqueda rápida
+    pedidos_existentes = set(df_pedidos_existente["Numero de Pedido"].astype(str)) if not df_pedidos_existente.empty else set()
+
+    # Lista para almacenar nuevos pedidos
+    nuevos_pedidos = []
+
+    # Iterar sobre cada pedido
+    for pedido_sel in pedidos_list:
+        pedido_sel_str = str(pedido_sel)
+
+        # Si el pedido ya está en la base de datos, lo ignoramos
+        if pedido_sel_str in pedidos_existentes:
+            print(f"El pedido {pedido_sel} ya existe en la base de datos. Se omitirá.")
+            continue
+
+        protected_url = f"https://tg.toscanagroup.com.co/ver_cotizacion.php?id={pedido_sel}"
         protected_response = session.get(protected_url, timeout=10)
         protected_response.raise_for_status()
 
-        print("Acceso a la URL protegida exitoso!")
+        print(f"Accediendo a pedido {pedido_sel}...")
 
-        # Procesar los datos de la página protegida
         soup = BeautifulSoup(protected_response.text, 'html.parser')
         table_element = soup.find("div", class_="container-fluid")
         datos_cliente = str(table_element.find("h3"))
@@ -62,76 +78,56 @@ try:
         if texto_dividido_final:
             cliente = texto_dividido_final.group(1).strip()
             pedido_exist = texto_dividido_final.group(2).strip()
-            fecha_entrega = texto_dividido_final.group(3).strip() 
+            fecha_entrega = texto_dividido_final.group(3).strip()
         else:
             cliente = "Desconocido"
-            pedido_exist = 00000
-            fecha_entrega = "0000/00/00" 
+            pedido_exist = "00000"
+            fecha_entrega = "0000/00/00"
 
-        
-
+        # Extraer tabla de pedidos
         tabla_pedido = table_element.find_all("div", class_="row-fluid")
         table_pedido = tabla_pedido[-4]
         tabla_items = table_pedido.find("table")
 
-
-
         tabla_campos_final = tabla_items.find("thead")
-
         if not tabla_campos_final:
-            raise ValueError("No se encontraron los campos de la tabla")
-
+            print(f"Error: No se encontraron los campos de la tabla para el pedido {pedido_sel}")
+            continue
 
         columnas = [th.get_text(strip=True) for th in tabla_campos_final.find_all("th")[1:-1]]
-        if not columnas:
-            raise ValueError("No se encontraron suficientes columnas en <thead>.")
-        
-        columnas.append("fecha de entrega")
-        columnas.append("cliente")
-        columnas.append("Numero de Pedido")
-        
-        print(columnas)
+        columnas.extend(["fecha de entrega", "cliente", "Numero de Pedido"])
 
         tabla_items_final = tabla_items.find("tbody")
         filas = tabla_items_final.find_all("tr")
 
-        datos_pedido = []
         for fil in filas:
             celdas = [td.get_text(strip=True) for td in fil.find_all("td")[1:-2]]
-            if not celdas:  # Si la lista está vacía, salta esta iteración
+            if not celdas:
                 continue
 
-            celdas.append(fecha_entrega)
-            celdas.append(cliente)
-            celdas.append(int(pedido_exist))
+            celdas.extend([fecha_entrega, cliente, int(pedido_exist)])
+            nuevos_pedidos.append(dict(zip(columnas, celdas)))
 
-            fila_dict = dict(zip(columnas, celdas))
-            datos_pedido.append(fila_dict)
-            print(datos_pedido)
-        df = pd.DataFrame(datos_pedido)
+    # Si hay nuevos pedidos, agregarlos al archivo
+    if nuevos_pedidos:
+        df_nuevos_pedidos = pd.DataFrame(nuevos_pedidos)
 
-        # Leer o crear el archivo Excel
-        if os.path.exists(ruta_archivo):
-            df_pedidos = pd.read_excel(ruta_archivo, sheet_name=hoja_objetivo)
-            if pedido_sel in df_pedidos['Numero de Pedido'].values:
-                print(f'El pedido {pedido_sel} ya existe en la base de datos')
-                
-            else:
-                df_pedidos_comb = pd.concat([df_pedidos, df], ignore_index=True)
-                df_final_pedido = df_pedidos_comb.drop_duplicates(
-                    subset=columnas, keep="last"
-            )
+        # Verificar duplicados antes de agregar
+        if not df_pedidos_existente.empty:
+            df_pedidos_final = pd.concat([df_pedidos_existente, df_nuevos_pedidos], ignore_index=True)
         else:
-            df_final_pedido = df
+            df_pedidos_final = df_nuevos_pedidos
 
-        # Guardar los datos en Excel
+        # Guardar en Excel
         with pd.ExcelWriter(ruta_archivo, mode="a", engine="openpyxl", if_sheet_exists="replace") as writer:
-            df_final_pedido.to_excel(writer, sheet_name=hoja_objetivo, index=False)
+            df_pedidos_final.to_excel(writer, sheet_name=hoja_objetivo, index=False)
 
-        print(f"Datos guardados exitosamente. pedido: {pedido_sel}")
+        print(f"Se guardaron {len(nuevos_pedidos)} nuevos pedidos.")
     else:
-        print("Login fallido.")
+        print("No hay nuevos pedidos para guardar.")
+
 except requests.exceptions.RequestException as e:
     print(f"Error de red o solicitud: {e}")
 except Exception as e:
     print(f"Error inesperado: {e}")
+
