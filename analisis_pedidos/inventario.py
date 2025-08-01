@@ -23,8 +23,8 @@ num_pag = 1  # Número de página
 tam_pag = 50  # Tamaño de página
 max_concurrent_tasks = 1  # Máximo de tareas concurrentes
 
-ruta_archivo = r"C:\Users\JORGE CONTRERAS\OneDrive - 900208659-2 DAMIS SAS\Escritorio\PLANEACION\consumos\INDICADORES PLANEACION\analisis_pedidos.xlsx"
-hoja_objetivo = "inventarios"
+ruta_archivo = r"C:/Users/JORGE CONTRERAS/OneDrive - 900208659-2 DAMIS SAS/Escritorio/PLANEACION/PLANEACION/INDICADORES PLANEACION/analisis_pedidos.xlsx"
+hoja_objetivo = "inventariosT"
 
 
 async def fetch_page(session, num_pag):
